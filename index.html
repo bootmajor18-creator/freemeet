@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreeMeet</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{
+    --bg:#1a1a1a; --panel:#242424; --panel2:#2e2e2e; --line:#3a3a3a;
+    --text:#f1f1f1; --muted:#a0a0a0; --accent:#2d8cff; --accent2:#1a6fd6;
+    --danger:#e5484d; --ok:#30a46c; --warn:#f5a524;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:"Sarabun","Segoe UI","Noto Sans Thai",system-ui,sans-serif}
+  button{font:inherit;color:inherit;cursor:pointer}
+  input{font:inherit}
+  .hidden{display:none!important}
+
+  /* ---------- Lobby ---------- */
+  #lobby{min-height:100%;display:flex;align-items:center;justify-content:center;padding:16px}
+  .lobby-card{display:grid;grid-template-columns:1.3fr 1fr;gap:24px;max-width:960px;width:100%;
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px}
+  @media (max-width:760px){.lobby-card{grid-template-columns:1fr}}
+  .preview{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden}
+  .preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  .preview .pv-ctrls{position:absolute;bottom:10px;left:0;right:0;display:flex;gap:10px;justify-content:center}
+  .round{width:46px;height:46px;border-radius:50%;border:none;background:rgba(255,255,255,.15);font-size:20px}
+  .round.off{background:var(--danger)}
+  h1{margin:0 0 4px;font-size:28px}
+  h1 span{color:var(--accent)}
+  .sub{color:var(--muted);margin:0 0 20px}
+  label{display:block;font-size:14px;color:var(--muted);margin:12px 0 6px}
+  .field{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text)}
+  .row{display:flex;gap:8px}
+  .btn{padding:12px 16px;border-radius:10px;border:none;background:var(--panel2);font-weight:600}
+  .btn.primary{background:var(--accent);width:100%;margin-top:18px;font-size:17px}
+  .btn.primary:hover{background:var(--accent2)}
+  .note{font-size:13px;color:var(--muted);margin-top:14px;line-height:1.5}
+  .err{color:#ff8a8a;font-size:14px;margin-top:10px}
+
+  /* ---------- Meeting ---------- */
+  #meeting{height:100%;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#111;font-size:14px;gap:10px}
+  .topbar .room{display:flex;gap:10px;align-items:center;min-width:0}
+  .pill{background:var(--panel2);padding:4px 10px;border-radius:99px;white-space:nowrap}
+  .pill.rec{background:var(--danger)}
+  .main{flex:1;display:flex;min-height:0}
+  #stage{flex:1;padding:10px;display:grid;gap:10px;min-width:0;align-content:center;
+    grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+  #stage.pinned{grid-template-columns:1fr;grid-template-rows:1fr auto;align-content:stretch}
+  #stage.pinned .tile:not(.pin){display:none}
+  .strip{display:none}
+  .tile{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;
+    border:3px solid transparent;transition:border-color .15s}
+  #stage.pinned .tile.pin{aspect-ratio:auto;height:100%}
+  .tile.speaking{border-color:var(--ok)}
+  .tile video{width:100%;height:100%;object-fit:cover;background:#000}
+  .tile.self video.mirror{transform:scaleX(-1)}
+  .tile.screen video{object-fit:contain}
+  .tile .avatar{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#202020}
+  .tile .avatar div{width:84px;height:84px;border-radius:50%;background:var(--accent);display:flex;
+    align-items:center;justify-content:center;font-size:36px;font-weight:700}
+  .tile .label{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);padding:3px 8px;border-radius:6px;font-size:13px;display:flex;gap:6px;align-items:center}
+  .tile .hand{position:absolute;top:8px;left:8px;font-size:26px}
+  .tile .react{position:absolute;top:8px;right:8px;font-size:40px;animation:pop 2.5s forwards}
+  .tile .tools{position:absolute;top:8px;right:8px;display:none;gap:4px}
+  .tile:hover .tools{display:flex}
+  .tile .tools button{border:none;background:rgba(0,0,0,.7);border-radius:6px;padding:4px 8px;font-size:12px}
+  @keyframes pop{0%{transform:scale(.3);opacity:0}15%{transform:scale(1.2);opacity:1}80%{opacity:1}100%{transform:translateY(-30px);opacity:0}}
+
+  .side{width:330px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column}
+  @media (max-width:760px){.side{position:fixed;inset:0 0 70px 0;width:auto;z-index:5}}
+  .side header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700}
+  .side header button{background:none;border:none;font-size:20px}
+  .side .body{flex:1;overflow:auto;padding:10px 14px}
+  .person{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .person .av{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+  .person .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .person .act button{border:none;background:var(--panel2);border-radius:6px;padding:3px 7px;font-size:12px;margin-left:3px}
+  .msg{margin:8px 0}
+  .msg .who{font-size:12px;color:var(--muted)}
+  .msg .txt{background:var(--panel2);padding:7px 10px;border-radius:10px;display:inline-block;max-width:100%;word-wrap:break-word;white-space:pre-wrap}
+  .msg.me{text-align:right}
+  .msg.me .txt{background:var(--accent2)}
+  .msg.sys{text-align:center;color:var(--muted);font-size:12px}
+  .chat-in{display:flex;gap:6px;padding:10px;border-top:1px solid var(--line)}
+  .chat-in input{flex:1}
+
+  .bar{display:flex;justify-content:center;align-items:center;gap:6px;padding:8px;background:#111;flex-wrap:wrap}
+  .ctl{display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;
+    padding:6px 10px;border-radius:10px;min-width:70px;font-size:12px;color:#ddd;position:relative}
+  .ctl:hover{background:var(--panel2)}
+  .ctl .ic{font-size:22px;line-height:1}
+  .ctl.off .ic{filter:grayscale(1)}
+  .ctl.off{color:#ff8a8a}
+  .ctl.on{color:#6ee7a8}
+  .ctl .badge{position:absolute;top:2px;right:12px;background:var(--danger);border-radius:99px;font-size:10px;padding:0 5px}
+  .leave{background:var(--danger)!important;color:#fff!important;padding:10px 18px;border-radius:10px;border:none;font-weight:700;margin-left:10px}
+  .popup{position:absolute;bottom:64px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px;display:flex;gap:4px;z-index:10}
+  .popup button{background:none;border:none;font-size:26px;padding:4px;border-radius:8px}
+  .popup button:hover{background:var(--panel2)}
+  .toast{position:fixed;top:56px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);
+    padding:10px 16px;border-radius:10px;z-index:50;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+
+<!-- ================= LOBBY ================= -->
+<section id="lobby">
+  <div class="lobby-card">
+    <div>
+      <div class="preview">
+        <video id="pvVideo" autoplay playsinline muted></video>
+        <div class="pv-ctrls">
+          <button class="round" id="pvMic" title="ไมค์">🎤</button>
+          <button class="round" id="pvCam" title="กล้อง">📷</button>
+        </div>
+      </div>
+      <p class="note" id="devNote"></p>
+    </div>
+    <div>
+      <h1>Free<span>Meet</span></h1>
+      <p class="sub">ประชุมออนไลน์ฟรี ไม่จำกัดเวลา ไม่ต้องสมัคร</p>
+      <label for="nameIn">ชื่อที่แสดง</label>
+      <input class="field" id="nameIn" maxlength="30" placeholder="เช่น สมชาย">
+      <label for="roomIn">รหัสห้องประชุม</label>
+      <div class="row">
+        <input class="field" id="roomIn" maxlength="24" placeholder="เช่น team-weekly">
+        <button class="btn" id="newRoom" title="สุ่มรหัสใหม่">🎲 ห้องใหม่</button>
+      </div>
+      <button class="btn primary" id="joinBtn">เข้าร่วมประชุม</button>
+      <div class="err" id="lobbyErr"></div>
+      <p class="note">คนแรกที่เข้าห้องจะเป็น <b>Host</b> (ควบคุมห้องได้) · ส่งลิงก์หรือรหัสห้องให้คนอื่นเพื่อเข้าร่วม<br>
+        เหมาะกับการประชุม 2–10 คน (ภาพ/เสียงส่งตรงระหว่างเครื่อง ไม่ผ่านเซิร์ฟเวอร์ใคร)</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MEETING ================= -->
+<section id="meeting" class="hidden">
+  <div class="topbar">
+    <div class="room">
+      <span class="pill">🔒 ห้อง: <b id="roomLabel"></b></span>
+      <span class="pill" id="roleLabel"></span>
+      <span class="pill rec hidden" id="recPill">● กำลังบันทึก</span>
+    </div>
+    <div class="room">
+      <span class="pill" id="timer">00:00</span>
+      <button class="btn" id="copyLink" style="padding:5px 10px">🔗 คัดลอกลิงก์เชิญ</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="stage"></div>
+
+    <aside class="side hidden" id="sidePeople">
+      <header>ผู้เข้าร่วม (<span id="pplCount">1</span>)<button data-close="sidePeople">✕</button></header>
+      <div class="body" id="pplList"></div>
+      <div class="chat-in" id="hostTools">
+        <button class="btn" id="muteAllBtn" style="flex:1">🔇 ปิดไมค์ทุกคน</button>
+        <button class="btn" id="lockBtn" style="flex:1">🔓 ล็อกห้อง</button>
+      </div>
+    </aside>
+
+    <aside class="side hidden" id="sideChat">
+      <header>แชท<button data-close="sideChat">✕</button></header>
+      <div class="body" id="chatLog"></div>
+      <form class="chat-in" id="chatForm">
+        <input class="field" id="chatIn" placeholder="พิมพ์ข้อความ..." autocomplete="off">
+        <button class="btn" style="background:var(--accent)">ส่ง</button>
+      </form>
+    </aside>
+  </div>
+
+  <div class="bar">
+    <button class="ctl" id="micBtn"><span class="ic">🎤</span><span>ปิดเสียง</span></button>
+    <button class="ctl" id="camBtn"><span class="ic">📷</span><span>ปิดกล้อง</span></button>
+    <button class="ctl" id="shareBtn"><span class="ic">🖥️</span><span>แชร์หน้าจอ</span></button>
+    <button class="ctl" id="pplBtn"><span class="ic">👥</span><span>ผู้เข้าร่วม</span></button>
+    <button class="ctl" id="chatBtn"><span class="ic">💬</span><span>แชท</span><span class="badge hidden" id="chatBadge">0</span></button>
+    <button class="ctl" id="handBtn"><span class="ic">✋</span><span>ยกมือ</span></button>
+    <div style="position:relative">
+      <button class="ctl" id="reactBtn"><span class="ic">😀</span><span>อีโมจิ</span></button>
+      <div class="popup hidden" id="reactPop">
+        <button>👍</button><button>👏</button><button>❤️</button><button>😂</button><button>😮</button><button>🎉</button>
+      </div>
+    </div>
+    <button class="ctl" id="recBtn"><span class="ic">⏺️</span><span>บันทึก</span></button>
+    <button class="ctl" id="fsBtn"><span class="ic">⛶</span><span>เต็มจอ</span></button>
+    <button class="leave" id="leaveBtn">ออกจากห้อง</button>
+  </div>
+</section>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const PREFIX = 'freemeet-v1-';
+const PEER_OPTS = { config: { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:global.stun.twilio.com:3478' }
+]}};
+
+// ---------- state ----------
+const S = {
+  name: '', room: '', peer: null, myId: '', isHost: false, hostId: '',
+  camTrack: null, micTrack: null, dummyV: null, dummyA: null,
+  out: new MediaStream(),          // stream sent to everyone
+  micOn: true, camOn: true, hand: false, sharing: null, locked: false,
+  members: new Map(),              // id -> {id,name,mic,cam,hand,sharing}
+  conns: new Map(),                // data connections (host: to guests; guest: to host only)
+  calls: new Map(),                // id -> MediaConnection
+  hostConn: null, startTs: 0, unread: 0, pinned: null,
+  audioCtx: null, analysers: new Map(), recorder: null
+};
+
+// ---------- utils ----------
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initial = n => (n || '?').trim().charAt(0).toUpperCase();
+const cleanRoom = r => r.toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/^-+|-+$/g, '').slice(0, 24);
+const randRoom = () => Math.random().toString(36).slice(2, 5) + '-' + Math.random().toString(36).slice(2, 6) + '-' + Math.random().toString(36).slice(2, 5);
+function toast(msg, ms = 2800) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+}
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+// ---------- media ----------
+function ensureAudioCtx() {
+  if (!S.audioCtx) S.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (S.audioCtx.state === 'suspended') S.audioCtx.resume();
+  return S.audioCtx;
+}
+function makeDummies() {
+  const c = document.createElement('canvas'); c.width = 640; c.height = 360;
+  const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 640, 360);
+  setInterval(() => { g.fillStyle = '#000'; g.fillRect(0, 0, 2, 2); }, 1000);
+  S.dummyV = c.captureStream(5).getVideoTracks()[0];
+  try {
+    const ac = ensureAudioCtx(), dst = ac.createMediaStreamDestination();
+    S.dummyA = dst.stream.getAudioTracks()[0];
+  } catch (e) { S.dummyA = null; }
+}
+async function getDevices() {
+  const tryGet = async c => { try { return await navigator.mediaDevices.getUserMedia(c); } catch (e) { return null; } };
+  if (!navigator.mediaDevices) { $('devNote').textContent = '⚠️ เบราว์เซอร์นี้ไม่รองรับกล้อง/ไมค์ (ต้องเปิดผ่าน https หรือ localhost)'; return; }
+  let st = await tryGet({ video: { width: 1280, height: 720 }, audio: { echoCancellation: true, noiseSuppression: true } });
+  if (!st) {
+    const a = await tryGet({ audio: true }), v = await tryGet({ video: true });
+    st = new MediaStream([...(a ? a.getTracks() : []), ...(v ? v.getTracks() : [])]);
+  }
+  S.camTrack = st.getVideoTracks()[0] || null;
+  S.micTrack = st.getAudioTracks()[0] || null;
+  if (!S.camTrack) S.camOn = false;
+  if (!S.micTrack) S.micOn = false;
+  const notes = [];
+  if (!S.camTrack) notes.push('ไม่พบกล้อง / ไม่ได้อนุญาต');
+  if (!S.micTrack) notes.push('ไม่พบไมค์ / ไม่ได้อนุญาต');
+  $('devNote').textContent = notes.length ? '⚠️ ' + notes.join(' · ') + ' — ยังเข้าประชุมได้ (ดู/ฟังได้อย่างเดียว)' : '✅ กล้องและไมค์พร้อมใช้งาน';
+  $('pvVideo').srcObject = S.camTrack ? new MediaStream([S.camTrack]) : null;
+  refreshPreviewBtns();
+}
+function refreshPreviewBtns() {
+  $('pvMic').classList.toggle('off', !S.micOn); $('pvMic').textContent = S.micOn ? '🎤' : '🔇';
+  $('pvCam').classList.toggle('off', !S.camOn); $('pvCam').textContent = S.camOn ? '📷' : '🚫';
+  if (S.camTrack) S.camTrack.enabled = S.camOn;
+  if (S.micTrack) S.micTrack.enabled = S.micOn;
+}
+function currentVideoTrack() { return S.sharing || S.camTrack || S.dummyV; }
+function buildOutStream() {
+  S.out = new MediaStream([currentVideoTrack(), S.micTrack || S.dummyA].filter(Boolean));
+}
+function replaceOutgoingVideo(track) {
+  S.out.getVideoTracks().forEach(t => S.out.removeTrack(t)); S.out.addTrack(track);
+  for (const call of S.calls.values()) {
+    const pc = call.peerConnection; if (!pc) continue;
+    pc.getSenders().forEach(s => { if (s.track && s.track.kind === 'video') s.replaceTrack(track); });
+  }
+}
+
+// ---------- tiles ----------
+function tileId(id) { return 'tile-' + id; }
+function ensureTile(id) {
+  let t = $(tileId(id));
+  if (t) return t;
+  t = document.createElement('div'); t.className = 'tile'; t.id = tileId(id);
+  t.innerHTML = `<video autoplay playsinline></video>
+    <div class="avatar"><div></div></div>
+    <div class="hand hidden">✋</div>
+    <div class="tools"><button data-act="pin">📌 ปักหมุด</button></div>
+    <div class="label"><span class="mic"></span><span class="nm"></span></div>`;
+  t.querySelector('[data-act=pin]').onclick = e => { e.stopPropagation(); togglePin(id); };
+  t.ondblclick = () => togglePin(id);
+  $('stage').appendChild(t);
+  return t;
+}
+function setTileStream(id, stream) {
+  const t = ensureTile(id), v = t.querySelector('video');
+  if (v.srcObject !== stream) v.srcObject = stream;
+  if (id === S.myId) v.muted = true;
+  v.play().catch(() => {});
+  if (id !== S.myId) watchSpeaking(id, stream);
+}
+function removeTile(id) {
+  const t = $(tileId(id)); if (t) t.remove();
+  const a = S.analysers.get(id); if (a) { try { a.src.disconnect(); } catch (e) {} S.analysers.delete(id); }
+  if (S.pinned === id) togglePin(id);
+}
+function renderTile(m) {
+  const t = ensureTile(m.id), self = m.id === S.myId;
+  t.classList.toggle('self', self);
+  t.classList.toggle('screen', !!m.sharing);
+  t.querySelector('video').classList.toggle('mirror', self && !m.sharing);
+  t.querySelector('.avatar').classList.toggle('hidden', !!(m.cam || m.sharing));
+  t.querySelector('.avatar div').textContent = initial(m.name);
+  t.querySelector('.hand').classList.toggle('hidden', !m.hand);
+  t.querySelector('.nm').textContent = m.name + (self ? ' (คุณ)' : '') + (m.id === S.hostId ? ' · Host' : '') + (m.sharing ? ' · กำลังแชร์จอ' : '');
+  t.querySelector('.mic').textContent = m.mic ? '🎤' : '🔇';
+}
+function togglePin(id) {
+  document.querySelectorAll('.tile.pin').forEach(x => x.classList.remove('pin'));
+  if (S.pinned === id) { S.pinned = null; $('stage').classList.remove('pinned'); return; }
+  S.pinned = id; const t = $(tileId(id));
+  if (t) { t.classList.add('pin'); $('stage').classList.add('pinned'); }
+}
+function watchSpeaking(id, stream) {
+  if (S.analysers.has(id) || !stream.getAudioTracks().length) return;
+  try {
+    const ac = ensureAudioCtx(), src = ac.createMediaStreamSource(stream), an = ac.createAnalyser();
+    an.fftSize = 512; src.connect(an);
+    S.analysers.set(id, { src, an, buf: new Uint8Array(an.frequencyBinCount) });
+  } catch (e) {}
+}
+function speakLoop() {
+  for (const [id, a] of S.analysers) {
+    a.an.getByteFrequencyData(a.buf);
+    let sum = 0; for (const v of a.buf) sum += v;
+    const t = $(tileId(id)); if (t) t.classList.toggle('speaking', sum / a.buf.length > 18);
+  }
+  requestAnimationFrame(speakLoop);
+}
+
+// ---------- members / UI ----------
+function myState() { return { id: S.myId, name: S.name, mic: S.micOn, cam: S.camOn, hand: S.hand, sharing: !!S.sharing }; }
+function renderPeople() {
+  const list = [...S.members.values()];
+  $('pplCount').textContent = list.length;
+  $('pplList').innerHTML = list.map(m => `
+    <div class="person">
+      <div class="av">${esc(initial(m.name))}</div>
+      <div class="nm">${m.hand ? '✋ ' : ''}${esc(m.name)}${m.id === S.myId ? ' (คุณ)' : ''}${m.id === S.hostId ? ' · <b>Host</b>' : ''}</div>
+      <span>${m.mic ? '🎤' : '🔇'}${m.cam ? '📷' : '🚫'}</span>
+      ${S.isHost && m.id !== S.myId ? `<span class="act">
+        <button data-mute="${esc(m.id)}">ปิดไมค์</button><button data-kick="${esc(m.id)}">เชิญออก</button></span>` : ''}
+    </div>`).join('');
+  $('hostTools').classList.toggle('hidden', !S.isHost);
+  list.forEach(renderTile);
+}
+$('pplList').addEventListener('click', e => {
+  const mu = e.target.dataset.mute, k = e.target.dataset.kick;
+  if (mu) sendTo(mu, { t: 'mute' });
+  if (k && confirm('เชิญผู้เข้าร่วมคนนี้ออกจากห้อง?')) { sendTo(k, { t: 'kick' }); setTimeout(() => dropPeer(k), 400); }
+});
+function applyMembers(arr) {
+  const ids = new Set(arr.map(m => m.id));
+  for (const id of S.members.keys()) if (!ids.has(id)) { dropCall(id); removeTile(id); }
+  S.members = new Map(arr.map(m => [m.id, m]));
+  S.members.set(S.myId, myState());
+  renderPeople();
+}
+function addChat(name, text, me, sys) {
+  const d = document.createElement('div');
+  d.className = 'msg' + (me ? ' me' : '') + (sys ? ' sys' : '');
+  const time = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  d.innerHTML = sys ? esc(text) : `<div class="who">${esc(name)} · ${time}</div><div class="txt">${esc(text)}</div>`;
+  $('chatLog').appendChild(d); $('chatLog').scrollTop = 1e9;
+  if (!me && !sys && $('sideChat').classList.contains('hidden')) {
+    S.unread++; $('chatBadge').textContent = S.unread; $('chatBadge').classList.remove('hidden');
+    toast('💬 ' + name + ': ' + text.slice(0, 60));
+  }
+}
+function showReaction(id, emoji) {
+  const t = $(tileId(id)); if (!t) return;
+  const r = document.createElement('div'); r.className = 'react'; r.textContent = emoji;
+  t.appendChild(r); setTimeout(() => r.remove(), 2600);
+}
+
+// ---------- messaging ----------
+function broadcast(msg, exceptId) {         // host only
+  for (const [id, c] of S.conns) if (id !== exceptId && c.open) c.send(msg);
+}
+function sendTo(id, msg) {                   // host only
+  const c = S.conns.get(id); if (c && c.open) c.send(msg);
+}
+function toHost(msg) {                       // guest, or host handling locally
+  if (S.isHost) handleFromGuest(S.myId, msg);
+  else if (S.hostConn && S.hostConn.open) S.hostConn.send(msg);
+}
+function pushState() { S.members.set(S.myId, myState()); renderPeople(); toHost({ t: 'state', ...myState() }); }
+function hostSyncMembers() { broadcast({ t: 'members', members: [...S.members.values()], hostId: S.myId, locked: S.locked }); renderPeople(); }
+
+// host receives
+function handleFromGuest(from, m) {
+  switch (m.t) {
+    case 'hello':
+      if (S.locked) { sendTo(from, { t: 'locked' }); setTimeout(() => dropPeer(from), 500); return; }
+      S.members.set(from, { id: from, name: String(m.name).slice(0, 30), mic: !!m.mic, cam: !!m.cam, hand: false, sharing: false });
+      sendTo(from, { t: 'welcome', members: [...S.members.values()], hostId: S.myId });
+      hostSyncMembers();
+      addChat('', `${m.name} เข้าร่วมประชุม`, false, true);
+      broadcast({ t: 'sys', text: `${m.name} เข้าร่วมประชุม` }, from);
+      break;
+    case 'state':
+      if (from !== S.myId) S.members.set(from, { ...m, id: from, name: String(m.name).slice(0, 30) });
+      hostSyncMembers(); break;
+    case 'chat':
+      if (from !== S.myId) addChat(m.name, m.text, false);
+      broadcast({ ...m, from }, from); break;
+    case 'react':
+      showReaction(from, m.emoji);
+      broadcast({ ...m, from }, from); break;
+  }
+}
+// guest receives
+function handleFromHost(m) {
+  switch (m.t) {
+    case 'welcome':
+      S.hostId = m.hostId; applyMembers(m.members);
+      // newcomer calls everyone already in the room
+      m.members.forEach(x => { if (x.id !== S.myId) callPeer(x.id); });
+      break;
+    case 'members': S.hostId = m.hostId; S.locked = m.locked; applyMembers(m.members); break;
+    case 'chat': addChat(m.name, m.text, false); break;
+    case 'react': showReaction(m.from, m.emoji); break;
+    case 'sys': addChat('', m.text, false, true); break;
+    case 'mute': if (S.micOn) { toggleMic(); toast('🔇 Host ปิดไมค์ของคุณ'); } break;
+    case 'kick': toast('Host เชิญคุณออกจากห้อง', 5000); leave(true); break;
+    case 'locked': $('lobbyErr').textContent = 'ห้องนี้ถูกล็อกโดย Host'; leave(true); break;
+    case 'end': toast('Host จบการประชุมแล้ว', 5000); leave(true); break;
+  }
+}
+
+// ---------- peer connections ----------
+function wireCall(call) {
+  S.calls.set(call.peer, call);
+  call.on('stream', st => setTileStream(call.peer, st));
+  call.on('close', () => { S.calls.delete(call.peer); });
+  call.on('error', () => { S.calls.delete(call.peer); });
+}
+function callPeer(id) {
+  if (S.calls.has(id)) return;
+  wireCall(S.peer.call(id, S.out, { metadata: { name: S.name } }));
+}
+function dropCall(id) { const c = S.calls.get(id); if (c) { try { c.close(); } catch (e) {} S.calls.delete(id); } }
+function dropPeer(id) {        // host: remove a guest completely
+  const c = S.conns.get(id); if (c) { try { c.close(); } catch (e) {} S.conns.delete(id); }
+  dropCall(id); removeTile(id);
+  const m = S.members.get(id);
+  if (m && S.members.delete(id)) {
+    addChat('', `${m.name} ออกจากห้อง`, false, true);
+    broadcast({ t: 'sys', text: `${m.name} ออกจากห้อง` });
+    hostSyncMembers();
+  }
+}
+
+function newPeer(id) {
+  return new Promise((resolve, reject) => {
+    const p = id ? new Peer(id, PEER_OPTS) : new Peer(PEER_OPTS);
+    const onErr = e => { p.off('open', onOpen); reject({ peer: p, err: e }); };
+    const onOpen = myId => { p.off('error', onErr); resolve(p); };
+    p.once('open', onOpen); p.once('error', onErr);
+  });
+}
+
+function setupCommon(p) {
+  S.peer = p; S.myId = p.id;
+  p.on('call', call => { call.answer(S.out); wireCall(call); });
+  p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
+  p.on('error', e => {
+    if (e.type === 'peer-unavailable') return;  // a peer left mid-call
+    console.warn('peer error', e.type, e);
+  });
+}
+
+async function joinRoom() {
+  const hostId = PREFIX + S.room;
+  // 1) try to become host
+  try {
+    const p = await newPeer(hostId);
+    S.isHost = true; S.hostId = hostId; setupCommon(p);
+    p.on('connection', conn => {
+      conn.on('open', () => S.conns.set(conn.peer, conn));
+      conn.on('data', m => handleFromGuest(conn.peer, m));
+      conn.on('close', () => dropPeer(conn.peer));
+      conn.on('error', () => dropPeer(conn.peer));
+    });
+    return;
+  } catch (x) {
+    x.peer.destroy();
+    if (x.err.type !== 'unavailable-id') throw x.err;
+  }
+  // 2) room exists -> join as guest
+  const p = await newPeer(null);
+  S.isHost = false; S.hostId = hostId; setupCommon(p);
+  await new Promise((resolve, reject) => {
+    const conn = p.connect(hostId, { reliable: true });
+    const to = setTimeout(() => reject(new Error('timeout')), 12000);
+    p.once('error', e => { if (e.type === 'peer-unavailable') { clearTimeout(to); reject(new Error('nohost')); } });
+    conn.on('open', () => {
+      clearTimeout(to); S.hostConn = conn;
+      conn.send({ t: 'hello', ...myState() }); resolve();
+    });
+    conn.on('data', handleFromHost);
+    conn.on('close', () => { if (S.peer) { toast('การเชื่อมต่อกับ Host หลุด — การประชุมสิ้นสุด', 5000); leave(true); } });
+  });
+}
+
+// ---------- controls ----------
+function toggleMic() {
+  if (!S.micTrack) return toast('ไม่พบไมโครโฟน');
+  S.micOn = !S.micOn; S.micTrack.enabled = S.micOn; updateBar(); pushState();
+}
+function toggleCam() {
+  if (!S.camTrack) return toast('ไม่พบกล้อง');
+  S.camOn = !S.camOn; S.camTrack.enabled = S.camOn; updateBar(); pushState();
+}
+async function toggleShare() {
+  if (S.sharing) return stopShare();
+  try {
+    const ds = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
+    S.sharing = ds.getVideoTracks()[0];
+    S.sharing.onended = stopShare;
+    replaceOutgoingVideo(S.sharing);
+    setTileStream(S.myId, new MediaStream([S.sharing]));
+    if (S.pinned !== S.myId) togglePin(S.myId);
+    updateBar(); pushState();
+  } catch (e) { if (e.name !== 'NotAllowedError') toast('แชร์หน้าจอไม่สำเร็จ'); }
+}
+function stopShare() {
+  if (!S.sharing) return;
+  S.sharing.onended = null; S.sharing.stop(); S.sharing = null;
+  replaceOutgoingVideo(currentVideoTrack());
+  setTileStream(S.myId, new MediaStream([currentVideoTrack()]));
+  if (S.pinned === S.myId) togglePin(S.myId);
+  updateBar(); pushState();
+}
+function toggleHand() { S.hand = !S.hand; updateBar(); pushState(); }
+function updateBar() {
+  const set = (id, on, icOn, icOff, txtOn, txtOff) => {
+    const b = $(id); b.classList.toggle('off', !on);
+    b.querySelector('.ic').textContent = on ? icOn : icOff;
+    b.querySelectorAll('span')[1].textContent = on ? txtOn : txtOff;
+  };
+  set('micBtn', S.micOn, '🎤', '🔇', 'ปิดเสียง', 'เปิดเสียง');
+  set('camBtn', S.camOn, '📷', '🚫', 'ปิดกล้อง', 'เปิดกล้อง');
+  $('shareBtn').classList.toggle('on', !!S.sharing);
+  $('shareBtn').querySelectorAll('span')[1].textContent = S.sharing ? 'หยุดแชร์' : 'แชร์หน้าจอ';
+  $('handBtn').classList.toggle('on', S.hand);
+  $('handBtn').querySelectorAll('span')[1].textContent = S.hand ? 'เอามือลง' : 'ยกมือ';
+  $('recBtn').classList.toggle('on', !!S.recorder);
+  $('recBtn').querySelectorAll('span')[1].textContent = S.recorder ? 'หยุดบันทึก' : 'บันทึก';
+}
+function sendChat(text) {
+  text = text.trim(); if (!text) return;
+  addChat(S.name, text, true);
+  toHost({ t: 'chat', name: S.name, text: text.slice(0, 2000) });
+}
+function sendReact(emoji) { showReaction(S.myId, emoji); toHost({ t: 'react', emoji }); }
+
+// Local recording: records the meeting tab (pick "This tab") + mixes everyone's audio.
+async function toggleRecord() {
+  if (S.recorder) { S.recorder.stop(); return; }
+  let disp;
+  try {
+    disp = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 24 }, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
+  } catch (e) { return; }
+  const ac = ensureAudioCtx(), dst = ac.createMediaStreamDestination();
+  const addAudio = st => { if (st && st.getAudioTracks().length) { try { ac.createMediaStreamSource(st).connect(dst); } catch (e) {} } };
+  if (S.micTrack) addAudio(new MediaStream([S.micTrack]));
+  document.querySelectorAll('.tile:not(.self) video').forEach(v => addAudio(v.srcObject));
+  addAudio(disp);
+  const mixed = new MediaStream([...disp.getVideoTracks(), ...dst.stream.getAudioTracks()]);
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+  const rec = new MediaRecorder(mixed, mime ? { mimeType: mime } : {}), chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = () => {
+    disp.getTracks().forEach(t => t.stop());
+    const blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `FreeMeet-${S.room}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${(rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    S.recorder = null; $('recPill').classList.add('hidden'); updateBar(); toast('💾 บันทึกไฟล์วิดีโอแล้ว');
+  };
+  disp.getVideoTracks()[0].onended = () => rec.state !== 'inactive' && rec.stop();
+  rec.start(1000); S.recorder = rec; $('recPill').classList.remove('hidden'); updateBar();
+  toast('⏺️ เริ่มบันทึก (ไฟล์จะถูกบันทึกในเครื่องคุณ)');
+}
+
+function leave(silent) {
+  if (!silent && !confirm(S.isHost ? 'คุณเป็น Host — ถ้าออก การประชุมจะจบสำหรับทุกคน ยืนยัน?' : 'ออกจากการประชุม?')) return;
+  if (S.isHost) broadcast({ t: 'end' });
+  if (S.recorder) S.recorder.stop();
+  const p = S.peer; S.peer = null;
+  setTimeout(() => { try { p && p.destroy(); } catch (e) {} }, 300);
+  if (S.sharing) { S.sharing.stop(); S.sharing = null; }
+  S.calls.clear(); S.conns.clear(); S.members.clear(); S.analysers.clear(); S.hostConn = null;
+  $('stage').innerHTML = ''; $('chatLog').innerHTML = '';
+  $('meeting').classList.add('hidden'); $('lobby').classList.remove('hidden');
+  $('pvVideo').srcObject = S.camTrack ? new MediaStream([S.camTrack]) : null;
+  S.hand = false; S.pinned = null; $('stage').classList.remove('pinned');
+}
+
+// ---------- wiring ----------
+$('pvMic').onclick = () => { if (S.micTrack) { S.micOn = !S.micOn; refreshPreviewBtns(); } };
+$('pvCam').onclick = () => { if (S.camTrack) { S.camOn = !S.camOn; refreshPreviewBtns(); } };
+$('newRoom').onclick = () => { $('roomIn').value = randRoom(); };
+$('joinBtn').onclick = async () => {
+  const name = $('nameIn').value.trim(), room = cleanRoom($('roomIn').value);
+  $('lobbyErr').textContent = '';
+  if (!name) return $('lobbyErr').textContent = 'กรุณาใส่ชื่อ';
+  if (room.length < 3) return $('lobbyErr').textContent = 'รหัสห้องต้องมีอย่างน้อย 3 ตัว (a-z, 0-9, -)';
+  if (typeof Peer === 'undefined') return $('lobbyErr').textContent = 'โหลดไลบรารีไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ต';
+  S.name = name; S.room = room; store('fm-name', name);
+  $('joinBtn').disabled = true; $('joinBtn').textContent = 'กำลังเชื่อมต่อ...';
+  ensureAudioCtx(); if (!S.dummyV) makeDummies(); buildOutStream();
+  try {
+    await joinRoom();
+  } catch (e) {
+    console.error(e);
+    $('lobbyErr').textContent = e && e.message === 'nohost' ? 'เชื่อมต่อห้องไม่ได้ ลองใหม่อีกครั้งในไม่กี่วินาที' : 'เชื่อมต่อไม่สำเร็จ: ' + (e.type || e.message || e);
+    if (S.peer) { S.peer.destroy(); S.peer = null; }
+    $('joinBtn').disabled = false; $('joinBtn').textContent = 'เข้าร่วมประชุม';
+    return;
+  }
+  $('joinBtn').disabled = false; $('joinBtn').textContent = 'เข้าร่วมประชุม';
+  history.replaceState(null, '', location.pathname + '?room=' + encodeURIComponent(room));
+  $('lobby').classList.add('hidden'); $('meeting').classList.remove('hidden');
+  $('roomLabel').textContent = room;
+  $('roleLabel').textContent = S.isHost ? '👑 คุณคือ Host' : '👤 ผู้เข้าร่วม';
+  S.members.set(S.myId, myState());
+  setTileStream(S.myId, new MediaStream([currentVideoTrack()]));
+  renderPeople(); updateBar();
+  S.startTs = Date.now();
+  addChat('', S.isHost ? 'คุณสร้างห้องแล้ว ส่งลิงก์เชิญให้ผู้อื่นได้เลย' : 'เข้าร่วมประชุมแล้ว', false, true);
+};
+$('micBtn').onclick = toggleMic;
+$('camBtn').onclick = toggleCam;
+$('shareBtn').onclick = toggleShare;
+$('handBtn').onclick = toggleHand;
+$('recBtn').onclick = toggleRecord;
+$('leaveBtn').onclick = () => leave(false);
+$('fsBtn').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
+$('pplBtn').onclick = () => { $('sideChat').classList.add('hidden'); $('sidePeople').classList.toggle('hidden'); };
+$('chatBtn').onclick = () => {
+  $('sidePeople').classList.add('hidden'); $('sideChat').classList.toggle('hidden');
+  S.unread = 0; $('chatBadge').classList.add('hidden'); $('chatIn').focus();
+};
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $(b.dataset.close).classList.add('hidden'));
+$('chatForm').onsubmit = e => { e.preventDefault(); sendChat($('chatIn').value); $('chatIn').value = ''; };
+$('reactBtn').onclick = () => $('reactPop').classList.toggle('hidden');
+$('reactPop').onclick = e => { if (e.target.tagName === 'BUTTON') { sendReact(e.target.textContent); $('reactPop').classList.add('hidden'); } };
+$('muteAllBtn').onclick = () => { broadcast({ t: 'mute' }); toast('ส่งคำสั่งปิดไมค์ทุกคนแล้ว'); };
+$('lockBtn').onclick = () => {
+  S.locked = !S.locked; $('lockBtn').textContent = S.locked ? '🔒 ปลดล็อกห้อง' : '🔓 ล็อกห้อง';
+  toast(S.locked ? 'ล็อกห้องแล้ว — คนใหม่เข้าไม่ได้' : 'ปลดล็อกห้องแล้ว'); hostSyncMembers();
+};
+$('copyLink').onclick = async () => {
+  const link = location.href.split('?')[0].split('#')[0] + '?room=' + encodeURIComponent(S.room);
+  try { await navigator.clipboard.writeText(link); toast('คัดลอกลิงก์แล้ว: ' + link); }
+  catch (e) { prompt('คัดลอกลิงก์นี้:', link); }
+};
+document.addEventListener('keydown', e => {
+  if ($('meeting').classList.contains('hidden') || e.target.tagName === 'INPUT') return;
+  if (e.altKey && e.key.toLowerCase() === 'a') { e.preventDefault(); toggleMic(); }
+  if (e.altKey && e.key.toLowerCase() === 'v') { e.preventDefault(); toggleCam(); }
+  if (e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); toggleShare(); }
+  if (e.altKey && e.key.toLowerCase() === 'y') { e.preventDefault(); toggleHand(); }
+});
+window.addEventListener('beforeunload', () => { if (S.isHost) broadcast({ t: 'end' }); });
+setInterval(() => {
+  if (!S.startTs) return;
+  const s = Math.floor((Date.now() - S.startTs) / 1000), h = Math.floor(s / 3600);
+  $('timer').textContent = (h ? h + ':' : '') + String(Math.floor(s / 60) % 60).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}, 1000);
+
+// ---------- init ----------
+$('nameIn').value = load('fm-name') || '';
+$('roomIn').value = new URLSearchParams(location.search).get('room') || randRoom();
+getDevices();
+requestAnimationFrame(speakLoop);
+})();
+</script>
+</body>
+</html>
